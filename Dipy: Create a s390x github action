@@ -1,0 +1,60 @@
+*Create a s390x github action for this issue:*
+
+"I don't know how to bind the below on Github Actions, but maybe this will give you ideas.
+To test on big endian, my go to platform is to use qemu-system-s390x coupled to binfmt kernel settings, provided by Debian packages qemu-system-misc and qemu-user-static. Once installed, I can spawn a Debian s390x system root tree with e.g.:
+
+# debootstrap --arch s390x sid /srv/chroot/sid-390x http://ftp.fr.debian.org/debian
+Once done, I can chroot straight into the tree and, thanks to binfmt, qemu-system-s390x will "interpret" the s390x executables:
+
+# uname -m
+x86_64
+# chroot /srv/chroot/sid-390x
+# uname -m
+s390x
+Crude yet effective. Main drawback is, that emulation for s390x is slow: running the test suite took some eight hours to run on my machine, to compare to one quarter of hour on the native cpu.
+
+I'm using actually a configuration a bit more elaborate, but you get the idea."
+
+Solution:
+name: Big Endian Tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  big-endian-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v2
+
+    - name: Set up QEMU and debootstrap
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y qemu-system-s390x qemu-user-static debootstrap
+        sudo update-binfmts --enable qemu-s390x
+
+    - name: Set up Debian s390x chroot
+      run: |
+        sudo mkdir -p /srv/chroot
+        sudo debootstrap --arch s390x sid /srv/chroot/sid-390x http://ftp.fr.debian.org/debian
+
+    - name: Install dependencies
+      run: |
+        sudo chroot /srv/chroot/sid-390x apt-get update
+        sudo chroot /srv/chroot/sid-390x apt-get install -y python3 python3-pip
+
+    - name: Copy code to chroot
+      run: |
+        sudo mkdir -p /srv/chroot/sid-390x/my-project
+        sudo cp -r . /srv/chroot/sid-390x/my-project
+
+    - name: Run tests in chroot
+      run: |
+        sudo chroot /srv/chroot/sid-390x /bin/bash -c "cd my-project && python3 -m pip install .[tests] && pytest"
